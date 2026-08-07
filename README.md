@@ -13,9 +13,11 @@ Two pieces, nothing to build:
 ```bash
 pip install -r requirements.txt
 
-# 2026-27 Fall, only the courses you're actually weighing
-python scrape.py --term 2610 --subjects COMP ECON MGMT \
-    --courses COMP3711 COMP2211 ECON2123 ECON3014 MGMT2110
+# every subject on offer (~5 min, the script finds the subject list itself)
+python scrape.py --term 2610 --subjects all
+
+# or just a few subjects
+python scrape.py --term 2610 --subjects COMP ECON MGMT
 ```
 
 Then open `index.html` - double-clicking works, no server needed.
@@ -36,9 +38,24 @@ python scrape.py --file COMP.html --subject COMP --term 2610
 Repeat per subject if needed - each run overwrites `data/`, so merge by editing
 `data/courses.json` directly, or scrape all subjects in one go.
 
+## Keeping it current
+
+```bash
+./install-schedule.sh     # launchd agent, refreshes at 07:30 and 19:30
+./refresh.sh              # or run a refresh by hand
+./install-schedule.sh --remove
+```
+
+launchd catches up on runs missed while the Mac was asleep. Output goes to
+`logs/refresh.log`. A run that parses nothing leaves the existing `data/` alone
+rather than wiping it, so a bad scrape can't cost you a working catalogue.
+
+The header shows how old the loaded data is, and turns amber past 24 hours.
+
 ## Using the grid
 
 - Search a course, expand it, tick the sections you're considering
+- Each section lists its instructor under the time
 - Blocks land on the week; each course keeps its own colour
 - Overlapping blocks split the column and get a red hatch, and every collision is
   listed under the grid with the exact overlapping minutes
@@ -49,6 +66,8 @@ Repeat per subject if needed - each run overwrites `data/`, so merge by editing
 
 ```
 scrape.py           fetch + parse -> data/
+refresh.sh          one scheduled refresh
+install-schedule.sh sets up the twice-daily launchd agent
 data/courses.js     what index.html loads (ships with sample data)
 data/courses.json   same data, for anything else you want to do with it
 index.html          the app
@@ -63,6 +82,9 @@ index.html          the app
   are listed under the grid instead of being silently dropped.
 - The data that ships in `data/courses.js` is made up. The app shows a banner
   until the scraper replaces it.
+- The full catalogue is a few MB, so the course list is search-driven: type a
+  code or title rather than scrolling. Picked courses stay visible with the
+  search box empty.
 
 ## Deploy
 

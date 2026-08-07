@@ -33,6 +33,8 @@ except ImportError:
     sys.exit("Missing dependencies. Run: pip install requests beautifulsoup4")
 
 BASE_URL = "https://w5.ab.ust.hk/wcq/cgi-bin/{term}/subject/{subject}"
+INDEX_URL = "https://w5.ab.ust.hk/wcq/cgi-bin/{term}/"
+SUBJECT_LINK_RE = re.compile(r"/wcq/cgi-bin/\d{4}/subject/([A-Z]{2,5})")
 TERM_PART = {"10": "Fall", "20": "Winter", "30": "Spring", "40": "Summer"}
 DAY_TOKENS = ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"]
 
@@ -46,6 +48,11 @@ HEADING_RE = re.compile(
 )
 # "L1 (1234)"
 SECTION_RE = re.compile(r"^\s*([A-Z]+\d+[A-Z]?)\s*(?:\((\d+)\))?", re.S)
+
+# Column order in table.sections as of 2026: Section, Date & Time, Room,
+# Instructor, TA/IA/GTA, Quota, Enrol, Avail, Wait, Remarks.
+COL = {"section": 0, "when": 1, "room": 2, "instructor": 3,
+       "quota": 5, "enrol": 6, "avail": 7, "wait": 8}
 
 
 def term_name(term):
@@ -95,19 +102,13 @@ def as_int(text):
     return int(match.group()) if match else None
 
 
-# Column order in table.sections: Section, Date & Time, Room, Instructor,
-# TA/IA/GTA, Quota, Enrol, Avail, Wait, Remarks.
-COL = {"section": 0, "when": 1, "room": 2, "instructor": 3,
-       "quota": 5, "enrol": 6, "avail": 7, "wait": 8}
-
-
 def parse_subject_page(html):
-    """Read one subject page into course dicts."""
+    """Read one subject page (w5.ab.ust.hk Class Schedule & Quota) into course dicts."""
     soup = BeautifulSoup(html, "html.parser")
     courses = []
 
     blocks = soup.select("div.course")
-    if not blocks:
+    if not blocks:  # layout changed, or the saved page isn't a subject page
         return courses
 
     for block in blocks:
@@ -124,8 +125,9 @@ def parse_subject_page(html):
             "sections": [],
         }
 
-        # Only real rows carry "mainRow" - the site also emits duplicate
-        # mobile-layout rows that would otherwise be read as extra sections.
+        # Only real data rows carry "mainRow"; the site also emits duplicate
+        # "mobileInstructorRow" / "mobileViewDetail" rows for the phone layout
+        # that must be skipped or every section would be read twice.
         for row in block.select("table.sections tr.mainRow"):
             cells = row.find_all("td")
             if len(cells) < 9:
@@ -135,6 +137,7 @@ def parse_subject_page(html):
             section_match = SECTION_RE.match(label)
             if not section_match:
                 if not label and course["sections"]:
+                    # continuation row: extra meeting time for the section above
                     room = cell(cells, COL["room"])
                     for meeting in parse_datetime_cell(cell(cells, COL["when"])):
                         meeting["room"] = room
@@ -146,11 +149,12 @@ def parse_subject_page(html):
             for meeting in meetings:
                 meeting["room"] = room
 
+            instructor = cell(cells, COL["instructor"]).replace("\n", ", ")
             course["sections"].append(
                 {
                     "section": section_match.group(1),
                     "crn": section_match.group(2),
-                    "instructor": cell(cells, COL["instructor"]).replace("\n", ", "),
+                    "instructor": instructor,
                     "quota": as_int(cell(cells, COL["quota"])),
                     "enrol": as_int(cell(cells, COL["enrol"])),
                     "avail": as_int(cell(cells, COL["avail"])),
@@ -175,10 +179,17 @@ def fetch(url, timeout=30):
     return response.text
 
 
+def discover_subjects(term):
+    """Read the term landing page and return every subject code it links to."""
+    html = fetch(INDEX_URL.format(term=term))
+    codes = sorted(set(SUBJECT_LINK_RE.findall(html)))
+    return codes
+
+
 def write_outputs(payload, out_dir):
     out_dir = pathlib.Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
-    text = json.dumps(payload, indent=2, ensure_ascii=False)
+    text = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
     (out_dir / "courses.json").write_text(text, encoding="utf-8")
     # courses.js so index.html also works when opened straight off the disk,
     # where fetch() of a local .json is blocked by the browser.
@@ -192,7 +203,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--term", default="2610", help="e.g. 2610 for 2026-27 Fall")
-    parser.add_argument("--subjects", nargs="*", default=[], help="e.g. COMP ECON MGMT")
+    parser.add_argument("--subjects", nargs="*", default=[],
+                        help="e.g. COMP ECON MGMT, or 'all' for every subject")
     parser.add_argument("--courses", nargs="*", default=[],
                         help="keep only these codes, e.g. COMP3711 ECON2123")
     parser.add_argument("--file", help="parse a saved HTML page instead of the site")
@@ -212,8 +224,17 @@ def main():
         all_courses.extend(found)
     else:
         if not args.subjects:
-            sys.exit("Give --subjects (e.g. --subjects COMP ECON) or --file.")
-        for i, subject in enumerate(args.subjects):
+            sys.exit("Give --subjects (e.g. --subjects COMP ECON, or all) or --file.")
+
+        subjects = args.subjects
+        if len(subjects) == 1 and subjects[0].lower() == "all":
+            print("reading subject list...")
+            subjects = discover_subjects(args.term)
+            if not subjects:
+                sys.exit("No subject links found on the term page. Check the term code.")
+            print(f"{len(subjects)} subjects: {' '.join(subjects)}")
+
+        for i, subject in enumerate(subjects):
             url = BASE_URL.format(term=args.term, subject=subject.upper())
             try:
                 found = parse_subject_page(fetch(url))
@@ -221,9 +242,9 @@ def main():
                 print(f"{subject}: could not read ({error})")
                 print(f"  open {url} in a browser, save the page, then use --file")
                 continue
-            print(f"{subject}: {len(found)} courses")
+            print(f"[{i + 1}/{len(subjects)}] {subject}: {len(found)} courses")
             all_courses.extend(found)
-            if i < len(args.subjects) - 1:
+            if i < len(subjects) - 1:
                 time.sleep(args.delay)
 
     if keep:

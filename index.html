@@ -172,6 +172,14 @@
   .section-row input { margin: 2px 0 0; accent-color: var(--green); }
   .section-row .label { font-family: var(--mono); font-size: 12px; min-width: 34px; }
   .section-row .when { color: var(--text-dim); font-size: 12px; line-height: 1.45; }
+  .section-row .prof {
+    color: var(--text-faint);
+    font-size: 11px;
+    font-style: normal;
+    display: block;
+    margin-top: 2px;
+  }
+  .section-row .body { min-width: 0; flex: 1; }
   .section-row .avail { margin-left: auto; font-family: var(--mono); font-size: 11px; color: var(--text-faint); }
   .section-row .avail.full { color: var(--warn); }
 
@@ -196,6 +204,14 @@
   }
   .picked-item .drop:hover { color: var(--warn); }
 
+  .hint {
+    color: var(--text-faint);
+    font-size: 12px;
+    line-height: 1.6;
+    padding: 6px 4px;
+  }
+  .hint b { color: var(--text-dim); font-weight: 500; }
+  .stale { color: #e9c98a; }
   .ghost {
     color: var(--text-faint);
     font-size: 12.5px;
@@ -396,11 +412,16 @@
     return null;
   }
 
+  // Colour follows the order you picked courses in, so a 4000-course
+  // catalogue doesn't hand you six near-identical greens.
   function colorOf(code) {
-    var index = 0;
-    for (var i = 0; i < courses.length; i++) {
-      if (courses[i].code === code) { index = i; break; }
-    }
+    var order = [];
+    picks.forEach(function (key) {
+      var owner = key.split("|")[0];
+      if (order.indexOf(owner) < 0) order.push(owner);
+    });
+    var index = order.indexOf(code);
+    if (index < 0) index = 0;
     return "var(" + PALETTE[index % PALETTE.length] + ")";
   }
 
@@ -452,6 +473,7 @@
             code: course.code,
             section: section.section,
             room: meeting.room || "",
+            instructor: section.instructor || "",
             clash: false
           });
         });
@@ -504,19 +526,39 @@
 
   /* ---------- rendering ---------- */
 
+  var MAX_ROWS = 60;
+
   function renderPicker() {
     var query = filter.trim().toLowerCase();
-    var shown = courses.filter(function (course) {
+    var matches = courses.filter(function (course) {
       return !query ||
         course.code.toLowerCase().indexOf(query) >= 0 ||
         course.title.toLowerCase().indexOf(query) >= 0;
     });
 
-    if (!shown.length) {
-      el.courseList.innerHTML = '<p class="ghost">Nothing matches that. Clear the search to see all ' +
-        courses.length + ' courses.</p>';
+    // With every subject loaded, listing the whole catalogue is useless and
+    // slow. Show picked courses plus search results.
+    var pickedCodes = picks.map(function (key) { return key.split("|")[0]; });
+    var shown, note = "";
+    if (!query) {
+      shown = matches.filter(function (course) { return pickedCodes.indexOf(course.code) >= 0; });
+      note = '<p class="hint">' + courses.length + ' courses loaded. ' +
+        '<b>Search by code or title</b> to find one - try "COMP 3" or "microeconomics".</p>';
     } else {
-      el.courseList.innerHTML = shown.map(function (course) {
+      shown = matches.slice(0, MAX_ROWS);
+      if (matches.length > MAX_ROWS) {
+        note = '<p class="hint">showing ' + MAX_ROWS + ' of ' + matches.length +
+          ' matches - narrow the search</p>';
+      }
+    }
+
+    if (!shown.length) {
+      el.courseList.innerHTML = note + (query
+        ? '<p class="ghost">Nothing matches that.</p>'
+        : "");
+    } else {
+      el.courseList.innerHTML = note + (function () {
+      return shown.map(function (course) {
         var isOpen = !!open[course.code];
         var rows = isOpen ? course.sections.map(function (section) {
           var key = keyOf(course.code, section.section);
@@ -524,10 +566,12 @@
           var full = (section.avail !== null && section.avail !== undefined && section.avail <= 0);
           var quota = (section.avail === null || section.avail === undefined)
             ? "" : section.avail + "/" + section.quota;
+          var prof = section.instructor && section.instructor !== "TBA"
+            ? '<span class="prof">' + section.instructor + '</span>' : "";
           return '<label class="section-row">' +
               '<input type="checkbox" data-key="' + key + '"' + checked + '>' +
               '<span class="label">' + section.section + '</span>' +
-              '<span class="when">' + whenText(section) + '</span>' +
+              '<span class="body"><span class="when">' + whenText(section) + '</span>' + prof + '</span>' +
               '<span class="avail' + (full ? " full" : "") + '">' + quota + '</span>' +
             '</label>';
         }).join("") : "";
@@ -541,6 +585,7 @@
             (isOpen ? '<div class="sections">' + rows + '</div>' : "") +
           '</div>';
       }).join("");
+      })();
     }
 
     if (!picks.length) {
@@ -594,7 +639,7 @@
             ' style="--accent:' + colorOf(event.code) + ';top:' + top + 'px;height:' + height + 'px;' +
             'left:calc(' + (event.column * width) + '% + 2px);width:calc(' + width + '% - 4px)"' +
             ' title="' + event.code + " " + event.section + " " + clock(event.start) + "-" + clock(event.end) +
-            (event.room ? " · " + event.room : "") + '">' +
+            (event.room ? " · " + event.room : "") + (event.instructor ? " · " + event.instructor : "") + '">' +
             '<div class="b-code">' + event.code + ' ' + event.section + '</div>' +
             (short ? "" :
               '<div class="b-meta">' + clock(event.start) + '-' + clock(event.end) + '</div>' +
@@ -693,7 +738,16 @@
   }
 
   el.term.textContent = data.term_name || data.term || "";
-  el.meta.textContent = data.scraped_at ? "scraped " + data.scraped_at.replace("T", " ") : "";
+  if (data.scraped_at) {
+    var age = (Date.now() - new Date(data.scraped_at).getTime()) / 3600000;
+    var when = age < 1 ? "just now"
+      : age < 24 ? Math.round(age) + "h ago"
+      : Math.round(age / 24) + "d ago";
+    el.meta.textContent = "data updated " + when;
+    if (age > 24) el.meta.className = "meta stale";
+  } else {
+    el.meta.textContent = "";
+  }
   if (data.sample) {
     el.notice.hidden = false;
     el.notice.textContent = "Sample data - these times are made up. Run scrape.py to pull the real " +
