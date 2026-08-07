@@ -1,0 +1,251 @@
+#!/usr/bin/env python3
+"""
+Pull course sections from the HKUST Class Schedule & Quota site into data files
+that the week planner (index.html) reads.
+
+Basic use:
+    python scrape.py --term 2610 --subjects COMP ECON MGMT
+
+Only the courses you care about:
+    python scrape.py --term 2610 --subjects COMP ECON MGMT \
+        --courses COMP3711 COMP2211 ECON2123 ECON3014 MGMT2110
+
+If the site blocks the script or needs a login, open the subject page in your
+browser, save it as HTML, and parse the saved file instead:
+    python scrape.py --file COMP.html --subject COMP --term 2610
+
+Term codes are YYTT: YY = first year of the academic year, TT = 10 Fall,
+20 Winter, 30 Spring, 40 Summer. So 2026-27 Fall is 2610.
+"""
+
+import argparse
+import datetime
+import json
+import pathlib
+import re
+import sys
+import time
+
+try:
+    import requests
+    from bs4 import BeautifulSoup
+except ImportError:
+    sys.exit("Missing dependencies. Run: pip install requests beautifulsoup4")
+
+BASE_URL = "https://w5.ab.ust.hk/wcq/cgi-bin/{term}/subject/{subject}"
+TERM_PART = {"10": "Fall", "20": "Winter", "30": "Spring", "40": "Summer"}
+DAY_TOKENS = ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"]
+
+# "12:00PM - 12:50PM" / "01:30 PM - 02:50 PM"
+TIME_RE = re.compile(
+    r"(\d{1,2}):(\d{2})\s*([AaPp])\.?[Mm]\.?\s*-\s*(\d{1,2}):(\d{2})\s*([AaPp])\.?[Mm]\.?"
+)
+# "COMP 3711 - Design and Analysis of Algorithms (4 units)"
+HEADING_RE = re.compile(
+    r"^\s*([A-Z]{2,5})\s*(\d{4}[A-Z]?)\s*[-–]\s*(.+?)\s*\((\d+(?:\.\d+)?)\s*unit", re.S
+)
+# "L1 (1234)"
+SECTION_RE = re.compile(r"^\s*([A-Z]+\d+[A-Z]?)\s*(?:\((\d+)\))?", re.S)
+
+
+def term_name(term):
+    term = str(term)
+    if len(term) == 4 and term[2:] in TERM_PART:
+        yy = int(term[:2])
+        return f"20{yy:02d}-{yy + 1:02d} {TERM_PART[term[2:]]}"
+    return term
+
+
+def to_24h(hour, minute, meridiem):
+    hour = int(hour) % 12
+    if meridiem.upper() == "P":
+        hour += 12
+    return f"{hour:02d}:{int(minute):02d}"
+
+
+def parse_datetime_cell(text):
+    """Turn a 'Date & Time' cell into a list of meetings. One per line."""
+    meetings = []
+    for line in [l.strip() for l in text.split("\n") if l.strip()]:
+        match = TIME_RE.search(line)
+        if not match:
+            if "TBA" in line.upper():
+                meetings.append({"days": [], "start": None, "end": None, "raw": line})
+            continue
+        days = [d for d in DAY_TOKENS if d in line[: match.start()]]
+        meetings.append(
+            {
+                "days": days,
+                "start": to_24h(match.group(1), match.group(2), match.group(3)),
+                "end": to_24h(match.group(4), match.group(5), match.group(6)),
+                "raw": line,
+            }
+        )
+    return meetings
+
+
+def cell(cells, index):
+    if index < len(cells):
+        return cells[index].get_text("\n", strip=True)
+    return ""
+
+
+def as_int(text):
+    match = re.search(r"-?\d+", text or "")
+    return int(match.group()) if match else None
+
+
+# Column order in table.sections: Section, Date & Time, Room, Instructor,
+# TA/IA/GTA, Quota, Enrol, Avail, Wait, Remarks.
+COL = {"section": 0, "when": 1, "room": 2, "instructor": 3,
+       "quota": 5, "enrol": 6, "avail": 7, "wait": 8}
+
+
+def parse_subject_page(html):
+    """Read one subject page into course dicts."""
+    soup = BeautifulSoup(html, "html.parser")
+    courses = []
+
+    blocks = soup.select("div.course")
+    if not blocks:
+        return courses
+
+    for block in blocks:
+        heading = block.select_one("div.subject")
+        if not heading:
+            continue
+        match = HEADING_RE.match(heading.get_text(" ", strip=True))
+        if not match:
+            continue
+        course = {
+            "code": f"{match.group(1)}{match.group(2)}",
+            "title": match.group(3).strip(),
+            "credits": float(match.group(4)),
+            "sections": [],
+        }
+
+        # Only real rows carry "mainRow" - the site also emits duplicate
+        # mobile-layout rows that would otherwise be read as extra sections.
+        for row in block.select("table.sections tr.mainRow"):
+            cells = row.find_all("td")
+            if len(cells) < 9:
+                continue
+
+            label = cell(cells, COL["section"])
+            section_match = SECTION_RE.match(label)
+            if not section_match:
+                if not label and course["sections"]:
+                    room = cell(cells, COL["room"])
+                    for meeting in parse_datetime_cell(cell(cells, COL["when"])):
+                        meeting["room"] = room
+                        course["sections"][-1]["meetings"].append(meeting)
+                continue
+
+            room = cell(cells, COL["room"])
+            meetings = parse_datetime_cell(cell(cells, COL["when"]))
+            for meeting in meetings:
+                meeting["room"] = room
+
+            course["sections"].append(
+                {
+                    "section": section_match.group(1),
+                    "crn": section_match.group(2),
+                    "instructor": cell(cells, COL["instructor"]).replace("\n", ", "),
+                    "quota": as_int(cell(cells, COL["quota"])),
+                    "enrol": as_int(cell(cells, COL["enrol"])),
+                    "avail": as_int(cell(cells, COL["avail"])),
+                    "wait": as_int(cell(cells, COL["wait"])),
+                    "meetings": meetings,
+                }
+            )
+
+        if course["sections"]:
+            courses.append(course)
+
+    return courses
+
+
+def fetch(url, timeout=30):
+    response = requests.get(
+        url,
+        timeout=timeout,
+        headers={"User-Agent": "personal-timetable-planner (student, single user)"},
+    )
+    response.raise_for_status()
+    return response.text
+
+
+def write_outputs(payload, out_dir):
+    out_dir = pathlib.Path(out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    text = json.dumps(payload, indent=2, ensure_ascii=False)
+    (out_dir / "courses.json").write_text(text, encoding="utf-8")
+    # courses.js so index.html also works when opened straight off the disk,
+    # where fetch() of a local .json is blocked by the browser.
+    (out_dir / "courses.js").write_text(
+        "window.COURSE_DATA = " + text + ";\n", encoding="utf-8"
+    )
+    return out_dir
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__,
+                                     formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--term", default="2610", help="e.g. 2610 for 2026-27 Fall")
+    parser.add_argument("--subjects", nargs="*", default=[], help="e.g. COMP ECON MGMT")
+    parser.add_argument("--courses", nargs="*", default=[],
+                        help="keep only these codes, e.g. COMP3711 ECON2123")
+    parser.add_argument("--file", help="parse a saved HTML page instead of the site")
+    parser.add_argument("--subject", help="subject code for --file")
+    parser.add_argument("--out", default="data", help="output folder (default: data)")
+    parser.add_argument("--delay", type=float, default=2.0,
+                        help="seconds between requests (default: 2)")
+    args = parser.parse_args()
+
+    keep = {c.replace(" ", "").upper() for c in args.courses}
+    all_courses = []
+
+    if args.file:
+        html = pathlib.Path(args.file).read_text(encoding="utf-8", errors="ignore")
+        found = parse_subject_page(html)
+        print(f"{args.file}: {len(found)} courses")
+        all_courses.extend(found)
+    else:
+        if not args.subjects:
+            sys.exit("Give --subjects (e.g. --subjects COMP ECON) or --file.")
+        for i, subject in enumerate(args.subjects):
+            url = BASE_URL.format(term=args.term, subject=subject.upper())
+            try:
+                found = parse_subject_page(fetch(url))
+            except Exception as error:
+                print(f"{subject}: could not read ({error})")
+                print(f"  open {url} in a browser, save the page, then use --file")
+                continue
+            print(f"{subject}: {len(found)} courses")
+            all_courses.extend(found)
+            if i < len(args.subjects) - 1:
+                time.sleep(args.delay)
+
+    if keep:
+        all_courses = [c for c in all_courses if c["code"].upper() in keep]
+        missing = keep - {c["code"].upper() for c in all_courses}
+        for code in sorted(missing):
+            print(f"not found: {code}")
+
+    if not all_courses:
+        sys.exit("Nothing parsed. Check the term code, or save the page and use --file.")
+
+    payload = {
+        "term": args.term,
+        "term_name": term_name(args.term),
+        "scraped_at": datetime.datetime.now().isoformat(timespec="seconds"),
+        "sample": False,
+        "courses": sorted(all_courses, key=lambda c: c["code"]),
+    }
+    out_dir = write_outputs(payload, args.out)
+    sections = sum(len(c["sections"]) for c in all_courses)
+    print(f"wrote {len(all_courses)} courses / {sections} sections to {out_dir}/")
+
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,709 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Week Planner - HKUST</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --ink:        #070d16;
+    --panel:      #0e1725;
+    --panel-2:    #131f31;
+    --line:       #1e2c42;
+    --line-soft:  #17243a;
+    --text:       #e4ecf6;
+    --text-dim:   #8698b0;
+    --text-faint: #5b6c84;
+    --green:      #3f8f6e;
+    --green-lit:  #58b58e;
+    --blue:       #3573a8;
+    --warn:       #c9564a;
+
+    --c0: #3f8f6e;
+    --c1: #3573a8;
+    --c2: #6f7fbc;
+    --c3: #3f8888;
+    --c4: #8a6ea6;
+    --c5: #94764a;
+
+    --row-h: 54px;
+    --gutter: 62px;
+    --radius: 6px;
+
+    --display: "Space Grotesk", "Segoe UI", system-ui, sans-serif;
+    --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--ink);
+    color: var(--text);
+    font-family: var(--display);
+    font-size: 14px;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--green-lit);
+    outline-offset: 2px;
+  }
+
+  /* ---------- top bar ---------- */
+  .topbar {
+    display: flex;
+    align-items: baseline;
+    gap: 16px;
+    flex-wrap: wrap;
+    padding: 18px 22px;
+    border-bottom: 1px solid var(--line);
+    background: var(--panel);
+  }
+  .topbar h1 {
+    margin: 0;
+    font-size: 19px;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+  }
+  .topbar .term {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--green-lit);
+    border: 1px solid var(--line);
+    border-radius: 99px;
+    padding: 3px 10px;
+  }
+  .topbar .meta {
+    margin-left: auto;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--text-faint);
+  }
+
+  .notice {
+    margin: 0;
+    padding: 9px 22px;
+    font-family: var(--mono);
+    font-size: 11.5px;
+    color: #e9c98a;
+    background: #241d10;
+    border-bottom: 1px solid #3a2f19;
+  }
+
+  /* ---------- layout ---------- */
+  .layout {
+    display: grid;
+    grid-template-columns: 330px minmax(0, 1fr);
+    gap: 0;
+    min-height: calc(100vh - 61px);
+  }
+
+  .picker {
+    border-right: 1px solid var(--line);
+    background: var(--panel);
+    padding: 16px 14px 40px;
+  }
+
+  .board { padding: 16px 20px 48px; min-width: 0; }
+
+  /* ---------- picker ---------- */
+  .search {
+    width: 100%;
+    padding: 9px 11px;
+    background: var(--ink);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    color: var(--text);
+    font-family: var(--display);
+    font-size: 13.5px;
+  }
+  .search::placeholder { color: var(--text-faint); }
+
+  .eyebrow {
+    font-family: var(--mono);
+    font-size: 10.5px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--text-faint);
+    margin: 22px 0 8px;
+  }
+
+  .course { border-bottom: 1px solid var(--line-soft); }
+  .course-head {
+    width: 100%;
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    padding: 10px 4px;
+    background: none;
+    border: 0;
+    color: var(--text);
+    font-family: var(--display);
+    font-size: 13.5px;
+    text-align: left;
+    cursor: pointer;
+  }
+  .course-head:hover { color: var(--green-lit); }
+  .course-head .code { font-family: var(--mono); font-size: 12.5px; }
+  .course-head .name {
+    color: var(--text-dim);
+    font-size: 12px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .course-head .caret { margin-left: auto; color: var(--text-faint); }
+  .course-head[aria-expanded="true"] .caret { color: var(--green-lit); }
+
+  .sections { padding: 2px 0 12px; }
+  .section-row {
+    display: flex;
+    gap: 9px;
+    align-items: flex-start;
+    padding: 6px 6px 6px 4px;
+    border-radius: var(--radius);
+    cursor: pointer;
+  }
+  .section-row:hover { background: var(--panel-2); }
+  .section-row input { margin: 2px 0 0; accent-color: var(--green); }
+  .section-row .label { font-family: var(--mono); font-size: 12px; min-width: 34px; }
+  .section-row .when { color: var(--text-dim); font-size: 12px; line-height: 1.45; }
+  .section-row .avail { margin-left: auto; font-family: var(--mono); font-size: 11px; color: var(--text-faint); }
+  .section-row .avail.full { color: var(--warn); }
+
+  .picked-item {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    padding: 7px 4px;
+    border-bottom: 1px solid var(--line-soft);
+    font-size: 12.5px;
+  }
+  .swatch { width: 10px; height: 10px; border-radius: 2px; flex: none; }
+  .picked-item .drop {
+    margin-left: auto;
+    background: none;
+    border: 0;
+    color: var(--text-faint);
+    cursor: pointer;
+    font-size: 15px;
+    line-height: 1;
+    padding: 2px 4px;
+  }
+  .picked-item .drop:hover { color: var(--warn); }
+
+  .ghost {
+    color: var(--text-faint);
+    font-size: 12.5px;
+    line-height: 1.6;
+    padding: 4px;
+  }
+
+  .linkish {
+    background: none;
+    border: 0;
+    padding: 0;
+    color: var(--text-faint);
+    font-family: var(--mono);
+    font-size: 11px;
+    cursor: pointer;
+    text-decoration: underline;
+  }
+  .linkish:hover { color: var(--warn); }
+
+  /* ---------- grid ---------- */
+  .grid-wrap { overflow-x: auto; }
+  .grid {
+    min-width: 760px;
+    display: grid;
+    grid-template-columns: var(--gutter) repeat(7, minmax(0, 1fr));
+  }
+
+  .day-head {
+    padding: 4px 6px 10px;
+    border-bottom: 1px solid var(--line);
+  }
+  .day-head .dow { font-size: 13.5px; font-weight: 500; }
+  .day-head .hrs { font-family: var(--mono); font-size: 11px; color: var(--text-faint); }
+  .day-head.weekend .dow { color: var(--text-faint); }
+  .meter { height: 2px; background: var(--line); margin-top: 6px; }
+  .meter span { display: block; height: 100%; background: var(--green); }
+
+  .corner { border-bottom: 1px solid var(--line); }
+
+  .hours { position: relative; }
+  .hours .h {
+    height: var(--row-h);
+    font-family: var(--mono);
+    font-size: 10.5px;
+    color: var(--text-faint);
+    text-align: right;
+    padding-right: 9px;
+    transform: translateY(-6px);
+  }
+
+  .day-col {
+    position: relative;
+    border-left: 1px solid var(--line-soft);
+    background-image: repeating-linear-gradient(
+      to bottom,
+      var(--line-soft) 0 1px,
+      transparent 1px var(--row-h)
+    );
+  }
+  .day-col.weekend { background-color: rgba(255,255,255,0.012); }
+
+  .block {
+    position: absolute;
+    left: 2px;
+    width: calc(100% - 4px);
+    padding: 4px 6px;
+    border-radius: 4px;
+    border-left: 3px solid var(--accent);
+    background: color-mix(in srgb, var(--accent) 26%, transparent);
+    overflow: hidden;
+    font-size: 11.5px;
+    line-height: 1.3;
+  }
+  .block .b-code { font-family: var(--mono); font-weight: 500; }
+  .block .b-meta { color: var(--text-dim); font-size: 10.5px; }
+  .block.clashing {
+    border: 1px solid var(--warn);
+    border-left: 3px solid var(--warn);
+    background-image: repeating-linear-gradient(
+      45deg,
+      rgba(201, 86, 74, 0.30) 0 5px,
+      transparent 5px 10px
+    );
+  }
+
+  /* ---------- conflicts ---------- */
+  .report {
+    margin-top: 22px;
+    border-top: 1px solid var(--line);
+    padding-top: 14px;
+    font-family: var(--mono);
+    font-size: 12px;
+  }
+  .report .ok { color: var(--green-lit); }
+  .report .bad { color: var(--warn); }
+  .report ul { margin: 8px 0 0; padding-left: 18px; color: var(--text-dim); }
+  .report li { margin-bottom: 4px; }
+  .report .tba { color: var(--text-faint); margin-top: 8px; }
+
+  @media (max-width: 860px) {
+    .layout { grid-template-columns: 1fr; }
+    .picker { border-right: 0; border-bottom: 1px solid var(--line); }
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    .course-head, .section-row, .block { transition: background-color .12s ease, color .12s ease; }
+  }
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <h1>Week Planner</h1>
+  <span class="term" id="termLabel">-</span>
+  <span class="meta" id="dataMeta"></span>
+</header>
+
+<p class="notice" id="notice" hidden></p>
+
+<div class="layout">
+  <aside class="picker">
+    <input class="search" id="search" type="search" placeholder="Search course code or title" autocomplete="off">
+    <p class="eyebrow">Courses</p>
+    <div id="courseList"></div>
+    <p class="eyebrow">On the grid</p>
+    <div id="pickedList"></div>
+  </aside>
+
+  <section class="board">
+    <div class="grid-wrap">
+      <div class="grid" id="grid"></div>
+    </div>
+    <div class="report" id="report"></div>
+  </section>
+</div>
+
+<script src="data/courses.js"></script>
+<script>
+(function () {
+  "use strict";
+
+  var DAYS = ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"];
+  var DAY_FULL = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+  var START = 8 * 60;          // grid starts 8:00
+  var END = 22 * 60;           // grid ends 22:00
+  var ROW = 54;                // px per hour, matches --row-h
+  var PALETTE = ["--c0", "--c1", "--c2", "--c3", "--c4", "--c5"];
+  var STORE_KEY = "week-planner-picks";
+
+  var data = window.COURSE_DATA || null;
+  var courses = data && data.courses ? data.courses : [];
+  var picks = [];              // ["COMP3711|L1", ...]
+  var open = {};               // which courses are expanded
+  var filter = "";
+
+  var el = {
+    search: document.getElementById("search"),
+    courseList: document.getElementById("courseList"),
+    pickedList: document.getElementById("pickedList"),
+    grid: document.getElementById("grid"),
+    report: document.getElementById("report"),
+    notice: document.getElementById("notice"),
+    term: document.getElementById("termLabel"),
+    meta: document.getElementById("dataMeta")
+  };
+
+  /* ---------- helpers ---------- */
+
+  function minutes(hhmm) {
+    if (!hhmm) return null;
+    var bits = hhmm.split(":");
+    return parseInt(bits[0], 10) * 60 + parseInt(bits[1], 10);
+  }
+
+  function clock(mins) {
+    var h = Math.floor(mins / 60), m = mins % 60;
+    return (h < 10 ? "0" : "") + h + ":" + (m < 10 ? "0" : "") + m;
+  }
+
+  function hourLabel(h) {
+    var suffix = h < 12 ? "am" : "pm";
+    var display = h % 12 === 0 ? 12 : h % 12;
+    return display + " " + suffix;
+  }
+
+  function keyOf(code, section) { return code + "|" + section; }
+
+  function findCourse(code) {
+    for (var i = 0; i < courses.length; i++) {
+      if (courses[i].code === code) return courses[i];
+    }
+    return null;
+  }
+
+  function findSection(course, name) {
+    for (var i = 0; i < course.sections.length; i++) {
+      if (course.sections[i].section === name) return course.sections[i];
+    }
+    return null;
+  }
+
+  function colorOf(code) {
+    var index = 0;
+    for (var i = 0; i < courses.length; i++) {
+      if (courses[i].code === code) { index = i; break; }
+    }
+    return "var(" + PALETTE[index % PALETTE.length] + ")";
+  }
+
+  function whenText(section) {
+    return section.meetings.map(function (m) {
+      if (!m.start) return "TBA";
+      return m.days.join(" ") + " " + m.start + "-" + m.end + (m.room ? " · " + m.room : "");
+    }).join("  /  ");
+  }
+
+  function save() {
+    try { localStorage.setItem(STORE_KEY, JSON.stringify(picks)); } catch (e) { /* file:// or private mode */ }
+  }
+
+  function restore() {
+    try {
+      var raw = localStorage.getItem(STORE_KEY);
+      if (raw) picks = JSON.parse(raw).filter(function (k) {
+        var parts = k.split("|");
+        var course = findCourse(parts[0]);
+        return course && findSection(course, parts[1]);
+      });
+    } catch (e) { picks = []; }
+  }
+
+  /* ---------- events + clashes ---------- */
+
+  function buildEvents() {
+    var events = [], unscheduled = [];
+    picks.forEach(function (key) {
+      var parts = key.split("|");
+      var course = findCourse(parts[0]);
+      if (!course) return;
+      var section = findSection(course, parts[1]);
+      if (!section) return;
+
+      section.meetings.forEach(function (meeting) {
+        if (!meeting.start || !meeting.days.length) {
+          unscheduled.push(course.code + " " + section.section);
+          return;
+        }
+        meeting.days.forEach(function (day) {
+          var dayIndex = DAYS.indexOf(day);
+          if (dayIndex < 0) return;
+          events.push({
+            day: dayIndex,
+            start: minutes(meeting.start),
+            end: minutes(meeting.end),
+            code: course.code,
+            section: section.section,
+            room: meeting.room || "",
+            clash: false
+          });
+        });
+      });
+    });
+
+    var clashes = [];
+    for (var d = 0; d < 7; d++) {
+      var sameDay = events.filter(function (e) { return e.day === d; });
+      for (var i = 0; i < sameDay.length; i++) {
+        for (var j = i + 1; j < sameDay.length; j++) {
+          var a = sameDay[i], b = sameDay[j];
+          if (a.start < b.end && b.start < a.end) {
+            a.clash = b.clash = true;
+            clashes.push({
+              day: d,
+              a: a, b: b,
+              from: Math.max(a.start, b.start),
+              to: Math.min(a.end, b.end)
+            });
+          }
+        }
+      }
+    }
+    return { events: events, clashes: clashes, unscheduled: unscheduled };
+  }
+
+  // Overlapping blocks share the column width instead of covering each other.
+  function layout(dayEvents) {
+    dayEvents.sort(function (a, b) { return a.start - b.start || a.end - b.end; });
+    var groups = [], group = [], groupEnd = -1;
+    dayEvents.forEach(function (event) {
+      if (group.length && event.start >= groupEnd) { groups.push(group); group = []; groupEnd = -1; }
+      group.push(event);
+      groupEnd = Math.max(groupEnd, event.end);
+    });
+    if (group.length) groups.push(group);
+
+    groups.forEach(function (members) {
+      var columnEnds = [];
+      members.forEach(function (event) {
+        var column = 0;
+        while (column < columnEnds.length && columnEnds[column] > event.start) column++;
+        columnEnds[column] = event.end;
+        event.column = column;
+      });
+      members.forEach(function (event) { event.columns = columnEnds.length; });
+    });
+  }
+
+  /* ---------- rendering ---------- */
+
+  function renderPicker() {
+    var query = filter.trim().toLowerCase();
+    var shown = courses.filter(function (course) {
+      return !query ||
+        course.code.toLowerCase().indexOf(query) >= 0 ||
+        course.title.toLowerCase().indexOf(query) >= 0;
+    });
+
+    if (!shown.length) {
+      el.courseList.innerHTML = '<p class="ghost">Nothing matches that. Clear the search to see all ' +
+        courses.length + ' courses.</p>';
+    } else {
+      el.courseList.innerHTML = shown.map(function (course) {
+        var isOpen = !!open[course.code];
+        var rows = isOpen ? course.sections.map(function (section) {
+          var key = keyOf(course.code, section.section);
+          var checked = picks.indexOf(key) >= 0 ? " checked" : "";
+          var full = (section.avail !== null && section.avail !== undefined && section.avail <= 0);
+          var quota = (section.avail === null || section.avail === undefined)
+            ? "" : section.avail + "/" + section.quota;
+          return '<label class="section-row">' +
+              '<input type="checkbox" data-key="' + key + '"' + checked + '>' +
+              '<span class="label">' + section.section + '</span>' +
+              '<span class="when">' + whenText(section) + '</span>' +
+              '<span class="avail' + (full ? " full" : "") + '">' + quota + '</span>' +
+            '</label>';
+        }).join("") : "";
+
+        return '<div class="course">' +
+            '<button class="course-head" data-code="' + course.code + '" aria-expanded="' + isOpen + '">' +
+              '<span class="code">' + course.code + '</span>' +
+              '<span class="name">' + course.title + '</span>' +
+              '<span class="caret">' + (isOpen ? "−" : "+") + '</span>' +
+            '</button>' +
+            (isOpen ? '<div class="sections">' + rows + '</div>' : "") +
+          '</div>';
+      }).join("");
+    }
+
+    if (!picks.length) {
+      el.pickedList.innerHTML = '<p class="ghost">Nothing on the grid yet. Open a course above and tick a section.</p>';
+    } else {
+      el.pickedList.innerHTML = picks.map(function (key) {
+        var parts = key.split("|");
+        return '<div class="picked-item">' +
+            '<span class="swatch" style="background:' + colorOf(parts[0]) + '"></span>' +
+            '<span>' + parts[0] + " " + parts[1] + '</span>' +
+            '<button class="drop" data-drop="' + key + '" title="Remove">×</button>' +
+          '</div>';
+      }).join("") +
+      '<p style="margin:10px 4px 0"><button class="linkish" id="clearAll">clear all</button></p>';
+    }
+  }
+
+  function renderGrid(model) {
+    var hours = (END - START) / 60;
+    var html = '<div class="corner"></div>';
+
+    var load = [0, 0, 0, 0, 0, 0, 0];
+    model.events.forEach(function (event) { load[event.day] += (event.end - event.start) / 60; });
+    var busiest = Math.max.apply(null, load.concat([1]));
+
+    for (var d = 0; d < 7; d++) {
+      var weekend = d > 4 ? " weekend" : "";
+      html += '<div class="day-head' + weekend + '">' +
+          '<div class="dow">' + DAY_FULL[d] + '</div>' +
+          '<div class="hrs">' + load[d].toFixed(1) + ' hours</div>' +
+          '<div class="meter"><span style="width:' + (load[d] / busiest * 100) + '%"></span></div>' +
+        '</div>';
+    }
+
+    html += '<div class="hours">';
+    for (var h = 0; h < hours; h++) {
+      html += '<div class="h">' + hourLabel(START / 60 + h) + '</div>';
+    }
+    html += '</div>';
+
+    for (var day = 0; day < 7; day++) {
+      var dayEvents = model.events.filter(function (e) { return e.day === day; });
+      layout(dayEvents);
+
+      var blocks = dayEvents.map(function (event) {
+        var top = (event.start - START) / 60 * ROW;
+        var height = Math.max((event.end - event.start) / 60 * ROW - 2, 18);
+        var width = 100 / event.columns;
+        var short = (event.end - event.start) < 55;
+        return '<div class="block' + (event.clash ? " clashing" : "") + '"' +
+            ' style="--accent:' + colorOf(event.code) + ';top:' + top + 'px;height:' + height + 'px;' +
+            'left:calc(' + (event.column * width) + '% + 2px);width:calc(' + width + '% - 4px)"' +
+            ' title="' + event.code + " " + event.section + " " + clock(event.start) + "-" + clock(event.end) +
+            (event.room ? " · " + event.room : "") + '">' +
+            '<div class="b-code">' + event.code + ' ' + event.section + '</div>' +
+            (short ? "" :
+              '<div class="b-meta">' + clock(event.start) + '-' + clock(event.end) + '</div>' +
+              (event.room ? '<div class="b-meta">' + event.room + '</div>' : "")) +
+          '</div>';
+      }).join("");
+
+      html += '<div class="day-col' + (day > 4 ? " weekend" : "") + '" style="height:' + (hours * ROW) + 'px">' +
+        blocks + '</div>';
+    }
+
+    el.grid.innerHTML = html;
+  }
+
+  function renderReport(model) {
+    var html = "";
+    if (!picks.length) {
+      html = '<span class="ok">nothing picked</span>';
+    } else if (!model.clashes.length) {
+      html = '<span class="ok">no clashes - ' + picks.length + ' sections fit together</span>';
+    } else {
+      html = '<span class="bad">' + model.clashes.length + ' clash' +
+        (model.clashes.length > 1 ? "es" : "") + '</span><ul>' +
+        model.clashes.map(function (clash) {
+          return "<li>" + DAY_FULL[clash.day] + " " + clock(clash.from) + "-" + clock(clash.to) + ": " +
+            clash.a.code + " " + clash.a.section + " vs " + clash.b.code + " " + clash.b.section + "</li>";
+        }).join("") + "</ul>";
+    }
+    if (model.unscheduled.length) {
+      html += '<p class="tba">no time listed yet: ' + model.unscheduled.join(", ") + '</p>';
+    }
+    el.report.innerHTML = html;
+  }
+
+  function render() {
+    var model = buildEvents();
+    renderPicker();
+    renderGrid(model);
+    renderReport(model);
+  }
+
+  /* ---------- wiring ---------- */
+
+  el.search.addEventListener("input", function () {
+    filter = el.search.value;
+    renderPicker();
+  });
+
+  el.courseList.addEventListener("click", function (event) {
+    var head = event.target.closest(".course-head");
+    if (head) {
+      var code = head.getAttribute("data-code");
+      open[code] = !open[code];
+      renderPicker();
+    }
+  });
+
+  el.courseList.addEventListener("change", function (event) {
+    var box = event.target;
+    if (!box.matches("input[type=checkbox]")) return;
+    var key = box.getAttribute("data-key");
+    var at = picks.indexOf(key);
+    if (box.checked && at < 0) picks.push(key);
+    if (!box.checked && at >= 0) picks.splice(at, 1);
+    save();
+    render();
+    var again = el.courseList.querySelector('input[data-key="' + key + '"]');
+    if (again) again.focus();
+  });
+
+  el.pickedList.addEventListener("click", function (event) {
+    var drop = event.target.closest("[data-drop]");
+    if (drop) {
+      var at = picks.indexOf(drop.getAttribute("data-drop"));
+      if (at >= 0) picks.splice(at, 1);
+      save();
+      render();
+      return;
+    }
+    if (event.target.id === "clearAll") {
+      picks = [];
+      save();
+      render();
+    }
+  });
+
+  /* ---------- boot ---------- */
+
+  if (!data || !courses.length) {
+    el.notice.hidden = false;
+    el.notice.textContent = "No course data loaded. Run scrape.py to build data/courses.js, " +
+      "or serve this folder over http (python -m http.server).";
+    el.courseList.innerHTML = '<p class="ghost">Once data/courses.js exists, courses show up here.</p>';
+    el.term.textContent = "no data";
+    return;
+  }
+
+  el.term.textContent = data.term_name || data.term || "";
+  el.meta.textContent = data.scraped_at ? "scraped " + data.scraped_at.replace("T", " ") : "";
+  if (data.sample) {
+    el.notice.hidden = false;
+    el.notice.textContent = "Sample data - these times are made up. Run scrape.py to pull the real " +
+      (data.term_name || "term") + " schedule.";
+  }
+
+  restore();
+  courses.forEach(function (course) { open[course.code] = false; });
+  render();
+})();
+</script>
+</body>
+</html>
